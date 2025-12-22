@@ -56,6 +56,7 @@ g_target_width = 1920  # 目标宽度
 g_target_height = 1080  # 目标高度
 g_bayer_format = None  # 自动检测的Bayer格式
 
+
 # 稳定性测试统计变量
 g_total_frames = 0
 g_fps_list = []
@@ -191,7 +192,7 @@ def display_thread():
             elapsed_time = time.time() - fps_start_time
             if elapsed_time >= 1.0:
                 current_fps = fps_count / elapsed_time
-                g_fps_list.append(current_fps)
+                # g_fps_list.append(current_fps)
                 fps_count = 0
                 fps_start_time = time.time()
             
@@ -222,36 +223,53 @@ def display_thread():
     cv2.destroyAllWindows()
 
 # 健康监控线程
+
+# 在健康监控线程中添加帧率计算逻辑
 def health_monitor_thread():
     global g_bExit, g_total_frames, g_memory_usage, g_last_frame_count, g_frame_loss_count
+    global g_fps_count, g_fps_start_time, g_fps_list
     
-    logging.info("启动健康监控线程")
-    
-    while not g_bExit:
-        # 检查内存使用情况
-        process = psutil.Process(os.getpid())
-        memory_mb = process.memory_info().rss / (1024 * 1024)  # 转换为MB
-        g_memory_usage.append(memory_mb)
-        
-        # 检查帧率
-        current_time = time.time()
-        elapsed_time = current_time - g_start_time
-        if elapsed_time > 0:
-            current_fps = g_total_frames / elapsed_time
-            logging.info(f"健康监控 - 总帧数: {g_total_frames}, 当前帧率: {current_fps:.2f} fps, 内存使用: {memory_mb:.2f} MB, 错误数: {g_error_count}")
-        
-        # 检查帧丢失
-        if g_total_frames == g_last_frame_count:
-            g_frame_loss_count += 1
-            if g_frame_loss_count > 10:  # 连续10秒没有新帧
-                logging.warning(f"检测到帧丢失，连续 {g_frame_loss_count} 秒没有收到新帧")
-        else:
-            g_frame_loss_count = 0
-        g_last_frame_count = g_total_frames
-        
-        # 睡眠1秒
-        time.sleep(1)
+    logging.info("健康监控线程已启动")
+    # 帧率计算变量
+    local_frame_count = 0
+    fps_start_time = time.time()
+    current_fps = 0
 
+    while not g_bExit:
+        try:
+            # 检查内存使用情况
+            process = psutil.Process(os.getpid())
+            memory_mb = process.memory_info().rss / (1024 * 1024)  # 转换为MB
+            g_memory_usage.append(memory_mb)
+            # 计算并记录帧率（无论是否显示）
+            current_frame_count = g_total_frames
+            if current_frame_count > local_frame_count:
+                elapsed_time = time.time() - fps_start_time
+                if elapsed_time >= 1.0:
+                    current_fps = (current_frame_count - local_frame_count) / elapsed_time
+                    g_fps_list.append(current_fps)
+                    local_frame_count = current_frame_count
+                    fps_start_time = time.time()
+
+            # 输出健康监控日志
+            logging.info(f"健康监控 - 总帧数: {g_total_frames}, 当前帧率: {current_fps:.2f} fps, 内存使用: {memory_mb:.2f} MB, 错误数: {g_error_count}")
+            
+            # 检查帧丢失
+            if g_total_frames == g_last_frame_count:
+                g_frame_loss_count += 1
+                if g_frame_loss_count > 10:  # 连续10秒没有新帧
+                    logging.warning(f"检测到帧丢失，连续 {g_frame_loss_count} 秒没有收到新帧")
+            else:
+                g_frame_loss_count = 0
+            g_last_frame_count = g_total_frames
+            
+            # 睡眠1秒
+            time.sleep(1)
+            
+        except Exception as e:
+            logging.error(f"健康监控线程错误: {e}")
+            logging.error(traceback.format_exc())
+            time.sleep(1)
 # 设置相机参数
 def set_camera_params(cam, device_info):
     global g_target_fps, g_target_width, g_target_height
@@ -570,8 +588,18 @@ def main():
             elapsed_time = time.time() - g_start_time
             if elapsed_time >= g_test_duration:
                 logging.info(f"测试时长已到 {g_test_duration} 秒，结束测试")
+                g_bExit = True # 显示设置退出标志
                 break
             time.sleep(0.1)
+
+        # 2. 等待健康监控线程结束
+        logging.info("等待健康监控线程结束...")
+        health_thread_handle.join()
+        
+        # 3. 如果有显示线程，也等待其结束
+        if not args.no_display:
+            logging.info("等待显示线程结束...")
+            display_thread_handle.join()
         
         # 停止取流
         logging.info("停止取流...")
