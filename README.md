@@ -8,8 +8,9 @@
 python camera_stream.py
 ```
 
-长时间测试
+## Long time test
 
+### for x86 
 ```
 nohup python long_timg_test.py --duration <time/seconds> --no-display > long_test_24hours.log 2>&1 &
 ```
@@ -19,6 +20,8 @@ nohup python long_timg_test.py --duration <time/seconds> --no-display > long_tes
 --no-display : Don't display real time video stream
 
 
+
+### for OrangePi 
 ```
 nohup python long_time_test_for_orangePi.py --duration <time/seconds> --no-display > long_test_24hours.log 2>&1 &
 ```
